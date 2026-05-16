@@ -1,0 +1,22 @@
+llm:
+  provider: huggingface
+  model: deepseek-ai/DeepSeek-V4-Pro
+  timeout: 20
+  api_key_env: HF_TOKEN
+
+embedder:
+  provider: local
+  model: intfloat/multilingual-e5-base
+  timeout: 40
+  options:
+    device: cpu
+    backend: onnx
+    batch_size: 128
+
+reranker:
+  provider: local
+  model: jinaai/jina-reranker-v2-base-multilingual
+  timeout: 40
+  options:
+    device: cpu
+    backend: onnx

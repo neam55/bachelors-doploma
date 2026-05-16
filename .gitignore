@@ -416,3 +416,4 @@ FodyWeavers.xsd
 
 *unit.xml
 *integration.xml
+/.venv
