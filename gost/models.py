@@ -53,6 +53,8 @@ class StructureNode:
     number: str
     title: str
     page_start: int | None = None
+    page_end: int | None = None
+    breadcrumb: str = ""
     text: str = ""
     children: list[StructureNode] = field(default_factory=list)
 

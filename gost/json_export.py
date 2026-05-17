@@ -108,6 +108,8 @@ def _export_node(node: StructureNode) -> dict[str, Any]:
         "number": node.number,
         "title": node.title,
         "page_start": node.page_start,
+        "page_end": node.page_end,
+        "breadcrumb": node.breadcrumb,
         "text": node.text,
         "children": [_export_node(child) for child in node.children],
     }
