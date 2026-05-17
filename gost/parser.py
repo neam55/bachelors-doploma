@@ -4,6 +4,7 @@ from pathlib import Path
 
 import httpx
 
+from gost.document_links import extract_document_links
 from gost.metadata_scraper import MetadataScraper
 from gost.models import NormativeReference, ParsedGost
 from gost.normative_refs import merge_normative_references
@@ -65,6 +66,7 @@ class GostParser:
             index_refs,
             structure.normative_references,
         )
+        structure.document_links = extract_document_links(structure)
 
         return ParsedGost(
             metadata=metadata,

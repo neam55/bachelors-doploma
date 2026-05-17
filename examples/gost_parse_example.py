@@ -34,8 +34,9 @@ def _build_sample_export(full: dict, *, section_count: int = 2) -> dict:
     ]
     sample["normative_references"] = full["normative_references"][:20]
     sample["pdf_links"] = full["pdf_links"]
+    sample["document_links"] = full["document_links"][:30]
     sample["table_of_contents"] = full["table_of_contents"]
-    sample["_note"] = "Sample export: first 2 sections, 1 appendix, truncated text"
+    sample["_note"] = "Sample export: first 2 sections, 1 appendix, truncated text, top 30 document_links"
     return sample
 
 
@@ -53,8 +54,18 @@ def _validation_report(full: dict) -> dict:
         "appendices_ok": appendix_ids == ["А", "Б", "В", "Г"],
         "normative_references_count": len(full["normative_references"]),
         "pdf_links_count": len(full["pdf_links"]),
+        "document_links_count": len(full["document_links"]),
+        "document_links_by_type": _count_by_type(full["document_links"]),
         "toc_entries": len(full["table_of_contents"]),
     }
+
+
+def _count_by_type(links: list[dict]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for link in links:
+        key = link.get("link_type", "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def main() -> None:
@@ -82,8 +93,11 @@ def main() -> None:
     for k, v in validation.items():
         print(f"  {k}: {v}")
     print("\n=== Links report ===")
-    print(f"  total: {links_report['total_links']}, unique URLs: {links_report['unique_urls']}")
-    print(f"  by_source: {links_report['by_source']}")
+    pdf = links_report["pdf_links"]
+    doc = links_report["document_links"]
+    print(f"  pdf_links: {pdf['total']}, unique URLs: {pdf['unique_urls']}")
+    print(f"  document_links: {doc['total']} (resolved {doc['resolved']})")
+    print(f"  document_links by_type: {doc['by_type']}")
     print("\n=== Output files ===")
     for path in paths.values():
         print(f"  {path}")

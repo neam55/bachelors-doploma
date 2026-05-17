@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from gost.models import (
+    DocumentLink,
     GostDocumentStructure,
     GostMetadata,
     NormativeReference,
@@ -11,7 +12,6 @@ from gost.models import (
     StructureNode,
     TocEntry,
 )
-
 
 def export_parsed_gost(parsed: ParsedGost) -> dict[str, Any]:
     merged_refs = _merge_refs_for_export(
@@ -25,6 +25,9 @@ def export_parsed_gost(parsed: ParsedGost) -> dict[str, Any]:
         "appendices": [_export_node(n) for n in parsed.structure.appendices],
         "normative_references": [_export_ref(r) for r in merged_refs],
         "pdf_links": [_export_link(link) for link in parsed.structure.pdf_links],
+        "document_links": [
+            _export_document_link(link) for link in parsed.structure.document_links
+        ],
         "document": {
             "page_count": parsed.structure.page_count,
             "pdf_path": str(parsed.pdf_path),
@@ -33,18 +36,33 @@ def export_parsed_gost(parsed: ParsedGost) -> dict[str, Any]:
 
 
 def export_links_report(parsed: ParsedGost) -> dict[str, Any]:
-    links = parsed.structure.pdf_links
-    by_source: dict[str, int] = {}
-    for link in links:
-        by_source[link.source] = by_source.get(link.source, 0) + 1
+    pdf_links = parsed.structure.pdf_links
+    by_pdf_source: dict[str, int] = {}
+    for link in pdf_links:
+        by_pdf_source[link.source] = by_pdf_source.get(link.source, 0) + 1
 
-    unique_urls = sorted({link.url for link in links})
+    doc_links = parsed.structure.document_links
+    by_link_type: dict[str, int] = {}
+    resolved_count = 0
+    for link in doc_links:
+        by_link_type[link.link_type] = by_link_type.get(link.link_type, 0) + 1
+        if link.resolved:
+            resolved_count += 1
+
     return {
-        "total_links": len(links),
-        "unique_urls": len(unique_urls),
-        "by_source": by_source,
-        "links": [_export_link(link) for link in links],
-        "urls": unique_urls,
+        "pdf_links": {
+            "total": len(pdf_links),
+            "unique_urls": len({link.url for link in pdf_links}),
+            "by_source": by_pdf_source,
+            "links": [_export_link(link) for link in pdf_links],
+        },
+        "document_links": {
+            "total": len(doc_links),
+            "resolved": resolved_count,
+            "unresolved": len(doc_links) - resolved_count,
+            "by_type": by_link_type,
+            "links": [_export_document_link(link) for link in doc_links],
+        },
     }
 
 
@@ -109,4 +127,15 @@ def _export_link(link: PdfLink) -> dict[str, Any]:
         "url": link.url,
         "page": link.page,
         "source": link.source,
+    }
+
+
+def _export_document_link(link: DocumentLink) -> dict[str, Any]:
+    return {
+        "source": link.source,
+        "target": link.target,
+        "link_type": link.link_type,
+        "page": link.page,
+        "resolved": link.resolved,
+        "excerpt": link.excerpt,
     }

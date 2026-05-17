@@ -58,6 +58,16 @@ class StructureNode:
 
 
 @dataclass
+class DocumentLink:
+    source: str
+    target: str
+    link_type: Literal["clause", "section", "appendix", "standard", "classifier"]
+    page: int | None = None
+    resolved: bool = True
+    excerpt: str | None = None
+
+
+@dataclass
 class GostDocumentStructure:
     page_count: int
     table_of_contents: list[TocEntry] = field(default_factory=list)
@@ -65,6 +75,7 @@ class GostDocumentStructure:
     appendices: list[StructureNode] = field(default_factory=list)
     normative_references: list[NormativeReference] = field(default_factory=list)
     pdf_links: list[PdfLink] = field(default_factory=list)
+    document_links: list[DocumentLink] = field(default_factory=list)
 
 
 @dataclass
