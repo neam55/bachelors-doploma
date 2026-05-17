@@ -11,6 +11,7 @@ from models.ProviderRegistry import llm_registry
 class HuggingFaceLLMProvider(BaseLLMProvider):
     def __init__(self, context: ProviderContext, default_model: str) -> None:
         self._default_model = default_model
+        self._generation = dict(context.generation)
         self._client = InferenceClient(
             api_key=context.api_key,
             base_url=context.base_url,
@@ -25,10 +26,12 @@ class HuggingFaceLLMProvider(BaseLLMProvider):
     ) -> str:
         resolved = model or self._default_model
         payload = [{"role": m.role, "content": m.content} for m in messages]
+        params = {**self._generation, **kwargs}
+        #print(f"[HuggingFaceLLM] generation params: {params}")
         completion = self._client.chat.completions.create(
             model=resolved,
             messages=payload,
-            **kwargs,
+            **params,
         )
         return completion.choices[0].message.content
 

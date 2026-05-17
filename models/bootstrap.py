@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from models.Config import ConfigLoader, GatewayConfig
-from models.ModelsGateaway import ModelsGateway
+from models.ModelsGateway import ModelsGateway
 from models.factories.CrossEncoderFactory import RerankerFactory
 from models.factories.EmbedderFactory import EmbedderFactory
 from models.factories.LlmServiceFactory import LlmServiceFactory

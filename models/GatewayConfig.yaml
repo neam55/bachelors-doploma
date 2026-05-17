@@ -3,6 +3,9 @@ llm:
   model: deepseek-ai/DeepSeek-V4-Pro
   timeout: 20
   api_key_env: HF_TOKEN
+  generation: 
+    max_tokens: 1024
+    top_p: 0.3
 
 embedder:
   provider: local

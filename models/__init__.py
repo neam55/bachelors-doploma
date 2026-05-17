@@ -1,5 +1,5 @@
 from models.bootstrap import build_gateway, create_gateway
-from models.ModelsGateaway import ModelsGateway, ModelsGateway as ModelsGateaway
+from models.ModelsGateway import ModelsGateway, ModelsGateway
 from models.Config import ConfigLoader, GatewayConfig, ServiceConfig
 from models.ProviderRegistry import (
     embedder_registry,
@@ -9,7 +9,6 @@ from models.ProviderRegistry import (
 
 __all__ = [
     "ModelsGateway",
-    "ModelsGateaway",
     "GatewayConfig",
     "ServiceConfig",
     "ConfigLoader",

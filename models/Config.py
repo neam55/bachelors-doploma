@@ -39,6 +39,7 @@ class ServiceConfig:
     base_url: str | None = None
     base_url_env: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
+    generation: dict[str, Any] = field(default_factory=dict)
 
     def to_context(self, *, section: str = "service") -> ProviderContext:
         _ensure_dotenv()
@@ -58,6 +59,7 @@ class ServiceConfig:
             base_url=base_url,
             timeout=self.timeout,
             options=dict(self.options),
+            generation=dict(self.generation),
         )
 
 
@@ -78,6 +80,7 @@ def _parse_service(raw: dict[str, Any], section: str) -> ServiceConfig:
             base_url=raw.get("base_url"),
             base_url_env=raw.get("base_url_env"),
             options=dict(raw.get("options", {})),
+            generation=dict(raw.get("generation", {})),
         )
     except (KeyError, TypeError) as exc:
         raise ProviderConfigurationError(
