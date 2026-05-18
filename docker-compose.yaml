@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - 6333:6333
+    environment:
+      - QDRANT_PASSWORD=password
+    volumes:
+      - qdrant_data:/data
+
+memgraph:
+    image: memgraph/memgraph:latest
+    container_name: memgraph
+    restart: unless-stopped
+
+    ports:
+      - "7687:7687"   # Bolt protocol
+      - "7444:7444"   # optional monitoring / mgconsole extensions
+
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+
+    command: >
+      --log-level=INFO
+      --storage-recover-on-startup=true
+
+  lab:
+    image: memgraph/lab:latest
+    container_name: memgraph_lab
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    depends_on:
+      - memgraph
+
+volumes:
+  qdrant_data:
+  memgraph_data:
