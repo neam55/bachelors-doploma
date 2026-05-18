@@ -3,12 +3,20 @@ from __future__ import annotations
 import re
 
 from gost.models import NormativeReference, StructureNode
+from gost.text_normalize import normalize_block, normalize_line
 
-_GOST_DESIGNATION_RE = re.compile(
-    r"(ГОСТ\s+(?:Р\s+)?[\d]+(?:\.[\d]+)*(?:\s*[-—]\s*[\d]+)?)",
+_GOST_LINE_RE = re.compile(
+    r"^(ГОСТ\s+(?:Р\s+)?\d+(?:\.\d+)*(?:\s*[-—–]\s*\d+)?)\s+(.+)$",
     re.IGNORECASE,
 )
-_OK_RE = re.compile(r"(ОК(?:\s*\([^)]+\))?\s+[\d\w\-]+)", re.IGNORECASE)
+_GOST_INLINE_RE = re.compile(
+    r"ГОСТ\s+(?:Р\s+)?\d+(?:\.\d+)*(?:\s*[-—–]\s*\d+)?",
+    re.IGNORECASE,
+)
+_OK_LINE_RE = re.compile(
+    r"^(ОК(?:\s*\([^)]+\))?\s+\d{3}(?:\s*\([^)]+\))?(?:\s+\d+)?)\s*(.*)$",
+    re.IGNORECASE,
+)
 
 
 def extract_normative_references_from_section(
@@ -20,15 +28,20 @@ def extract_normative_references_from_section(
     refs: list[NormativeReference] = []
     seen: set[str] = set()
     page = section.page_start
+    body = section.text or ""
 
-    for block in _iter_text_blocks(section):
-        for pattern in (_GOST_DESIGNATION_RE, _OK_RE):
-            for match in pattern.finditer(block):
-                designation = re.sub(r"\s+", " ", match.group(1)).strip()
-                if designation in seen:
-                    continue
-                seen.add(designation)
-                title = _title_after_designation(block, match.end())
+    for line in body.splitlines():
+        line = normalize_line(line)
+        if not line or line.startswith("2 "):
+            continue
+
+        gost_match = _GOST_LINE_RE.match(line)
+        if gost_match:
+            designation = re.sub(r"\s+", " ", gost_match.group(1)).strip()
+            title = _clean_ref_title(gost_match.group(2))
+            key = designation.lower()
+            if key not in seen:
+                seen.add(key)
                 refs.append(
                     NormativeReference(
                         designation=designation,
@@ -36,6 +49,37 @@ def extract_normative_references_from_section(
                         page=page,
                     )
                 )
+            continue
+
+        ok_match = _OK_LINE_RE.match(line)
+        if ok_match:
+            designation = re.sub(r"\s+", " ", ok_match.group(1)).strip()
+            title = _clean_ref_title(ok_match.group(2)) or None
+            key = designation.lower()
+            if key not in seen:
+                seen.add(key)
+                refs.append(
+                    NormativeReference(
+                        designation=designation,
+                        title=title,
+                        page=page,
+                    )
+                )
+
+    if not refs:
+        for match in _GOST_INLINE_RE.finditer(normalize_block(body)):
+            designation = re.sub(r"\s+", " ", match.group(0)).strip()
+            key = designation.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            refs.append(
+                NormativeReference(
+                    designation=designation,
+                    page=page,
+                )
+            )
+
     return refs
 
 
@@ -79,18 +123,10 @@ def _normalize_designation(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip().lower()
 
 
-def _iter_text_blocks(node: StructureNode) -> list[str]:
-    blocks = [node.text] if node.text else []
-    for child in node.children:
-        blocks.extend(_iter_text_blocks(child))
-    return blocks
-
-
-def _title_after_designation(block: str, start: int) -> str | None:
-    tail = block[start:].strip()
-    if not tail or tail[0] in ".;,":
+def _clean_ref_title(raw: str) -> str | None:
+    title = normalize_line(raw)
+    if not title or title.upper().startswith("ГОСТ"):
         return None
-    title = tail.split(";")[0].split(".")[0].strip()
-    if len(title) < 3 or title.upper().startswith("ГОСТ"):
+    if len(title) < 3:
         return None
-    return title[:200] if title else None
+    return title[:300]

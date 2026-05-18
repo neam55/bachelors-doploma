@@ -7,6 +7,7 @@ import httpx
 from gost.document_links import extract_document_links
 from gost.breadcrumbs import assign_breadcrumbs
 from gost.page_ranges import assign_page_ends
+from gost.toc_sync import apply_toc_to_structure
 from gost.metadata_scraper import MetadataScraper
 from gost.models import NormativeReference, ParsedGost
 from gost.normative_refs import merge_normative_references
@@ -64,6 +65,7 @@ class GostParser:
                 )
 
         structure = PdfStructureParser().parse(resolved_pdf)
+        apply_toc_to_structure(structure, structure.table_of_contents)
         assign_page_ends(structure)
         assign_breadcrumbs(structure, metadata.designation)
         structure.normative_references = merge_normative_references(

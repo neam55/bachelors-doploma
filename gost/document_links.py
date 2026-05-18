@@ -3,16 +3,18 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from gost.entity_registry import EntityRegistry, build_entity_registry
 from gost.models import DocumentLink, GostDocumentStructure, StructureNode
 
-LinkType = Literal["clause", "section", "appendix", "standard", "classifier"]
+LinkType = Literal["clause", "section", "appendix", "standard", "classifier", "range"]
 
 _GOST_RE = re.compile(
-    r"ГОСТ\s+(?:Р\s+)?[\d]+(?:\.[\d]+)*(?:\s*[-—–]\s*[\d]+)?",
+    r"ГОСТ\s+(?:Р\s+)?\d+(?:\.\d+)*(?:\s*[-—–]\s*\d+)?",
     re.IGNORECASE,
 )
 _OK_RE = re.compile(
-    r"(?<![А-Яа-яA-Za-z])ОК(?:\s*\([^)]+\))?\s+[\dA-ZА-Я][\d\w\-]*(?:\s+[\d\w\-]+)?",
+    r"(?<![А-Яа-яA-Za-z])ОК(?:\s*\([^)]+\))?\s+\d{3}(?:\s*\([^)]+\))?(?:\s+\d+)?",
+    re.IGNORECASE,
 )
 _CLAUSE_RANGE_RE = re.compile(
     r"(?<![\d.])([1-6](?:\.\d+)+)\s*[—–\-]\s*([1-6](?:\.\d+)+)(?![\d.])",
@@ -36,7 +38,7 @@ _APPENDIX_RE = re.compile(
 
 
 def extract_document_links(structure: GostDocumentStructure) -> list[DocumentLink]:
-    registry = _build_target_registry(structure)
+    registry = build_entity_registry(structure)
     seen: set[tuple[str, str, LinkType]] = set()
     links: list[DocumentLink] = []
 
@@ -49,6 +51,7 @@ def extract_document_links(structure: GostDocumentStructure) -> list[DocumentLin
         text: str,
         start: int,
         end: int,
+        range_end: str | None = None,
     ) -> None:
         if source == target and link_type in ("clause", "section"):
             return
@@ -56,16 +59,39 @@ def extract_document_links(structure: GostDocumentStructure) -> list[DocumentLin
         if key in seen:
             return
         seen.add(key)
-        resolved = _is_resolved(target, link_type, registry)
-        excerpt = text[max(0, start - 40) : min(len(text), end + 40)].strip()
+
+        canonical, target_type, resolved = registry.classify_target(target)
+        if link_type == "range":
+            target_type = "range"
+            resolved = True
+        elif link_type in ("standard", "classifier"):
+            canonical = target
+            target_type = link_type
+            resolved = True
+        elif link_type == "appendix":
+            canonical, target_type, resolved = registry.classify_target(target)
+        elif link_type == "section":
+            canonical, target_type, resolved = registry.classify_target(target)
+        else:
+            canonical, target_type, resolved = registry.classify_target(target)
+
+        left = max(0, start - 40)
+        right = min(len(text), end + 40)
+        excerpt = text[left:right].strip()
+
         links.append(
             DocumentLink(
                 source=source,
                 target=target,
                 link_type=link_type,
+                target_type=target_type,
+                canonical_target=canonical,
                 page=page,
                 resolved=resolved,
                 excerpt=excerpt,
+                char_start=start,
+                char_end=end,
+                range_end=range_end,
             )
         )
 
@@ -78,6 +104,7 @@ def extract_document_links(structure: GostDocumentStructure) -> list[DocumentLin
 
         source = node.number
         page = node.page_start
+        protected = _collect_protected_spans(text)
 
         for match in _APPENDIX_RE.finditer(text):
             letter = match.group(1).upper()
@@ -106,6 +133,17 @@ def extract_document_links(structure: GostDocumentStructure) -> list[DocumentLin
 
         for match in _CLAUSE_RANGE_RE.finditer(text):
             start_id, end_id = match.group(1), match.group(2)
+            range_target = f"{start_id}—{end_id}"
+            add(
+                source,
+                range_target,
+                "range",
+                page=page,
+                text=text,
+                start=match.start(),
+                end=match.end(),
+                range_end=end_id,
+            )
             for target in _expand_clause_range(start_id, end_id):
                 add(
                     source,
@@ -119,6 +157,8 @@ def extract_document_links(structure: GostDocumentStructure) -> list[DocumentLin
 
         for pattern in (_CLAUSE_EXPLICIT_RE, _CLAUSE_BARE_RE):
             for match in pattern.finditer(text):
+                if _overlaps_protected(protected, match.start(), match.end()):
+                    continue
                 target = match.group(1)
                 if _is_own_heading(text, source, match.start()):
                     continue
@@ -170,30 +210,20 @@ def extract_document_links(structure: GostDocumentStructure) -> list[DocumentLin
     return links
 
 
-def _build_target_registry(structure: GostDocumentStructure) -> set[str]:
-    targets: set[str] = set()
-
-    def walk(node: StructureNode) -> None:
-        targets.add(node.number)
-        for child in node.children:
-            walk(child)
-
-    for section in structure.sections:
-        walk(section)
-    for appendix in structure.appendices:
-        targets.add(appendix.number)
-    return targets
+def _collect_protected_spans(text: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = []
+    for pattern in (_GOST_RE, _OK_RE, _CLAUSE_RANGE_RE):
+        for match in pattern.finditer(text):
+            spans.append((match.start(), match.end()))
+    return spans
 
 
-def _is_resolved(target: str, link_type: LinkType, registry: set[str]) -> bool:
-    if link_type in ("standard", "classifier"):
-        return True
-    if link_type == "appendix":
-        return target in registry
-    if link_type == "section":
-        return target in registry
-    if link_type == "clause":
-        return target in registry
+def _overlaps_protected(
+    protected: list[tuple[int, int]], start: int, end: int
+) -> bool:
+    for p_start, p_end in protected:
+        if not (end <= p_start or start >= p_end):
+            return True
     return False
 
 

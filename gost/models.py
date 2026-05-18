@@ -59,14 +59,24 @@ class StructureNode:
     children: list[StructureNode] = field(default_factory=list)
 
 
+LinkType = Literal[
+    "clause", "section", "appendix", "standard", "classifier", "range"
+]
+
+
 @dataclass
 class DocumentLink:
     source: str
     target: str
-    link_type: Literal["clause", "section", "appendix", "standard", "classifier"]
+    link_type: LinkType
+    target_type: str | None = None
+    canonical_target: str | None = None
     page: int | None = None
     resolved: bool = True
     excerpt: str | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    range_end: str | None = None
 
 
 @dataclass

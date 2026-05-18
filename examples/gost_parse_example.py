@@ -1,5 +1,3 @@
-"""Parse GOST R 1.1-2020 from stroyinf — run: python -m examples.gost_parse_example"""
-
 from __future__ import annotations
 
 import json
@@ -8,6 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from gost import GostParser, export_links_report, export_parsed_gost
+from gost.structure_validate import validate_structure_against_toc
 
 INDEX_URL = "https://files.stroyinf.ru/Index/73/73932.htm"
 OUT_DIR = Path("./data")
@@ -40,7 +39,7 @@ def _build_sample_export(full: dict, *, section_count: int = 2) -> dict:
     return sample
 
 
-def _validation_report(full: dict) -> dict:
+def _validation_report(full: dict, parsed) -> dict:
     section_numbers = [s["number"] for s in full["sections"]]
     appendix_ids = [
         a["number"].replace("Приложение ", "") for a in full["appendices"]
@@ -57,6 +56,9 @@ def _validation_report(full: dict) -> dict:
         "document_links_count": len(full["document_links"]),
         "document_links_by_type": _count_by_type(full["document_links"]),
         "toc_entries": len(full["table_of_contents"]),
+        "toc_validation": validate_structure_against_toc(
+            parsed.structure, parsed.structure.table_of_contents
+        ),
     }
 
 
@@ -77,7 +79,7 @@ def main() -> None:
     full = export_parsed_gost(parsed)
     sample = _build_sample_export(full, section_count=2)
     links_report = export_links_report(parsed)
-    validation = _validation_report(full)
+    validation = _validation_report(full, parsed)
 
     paths = {
         "full": OUT_DIR / "gost_r_1_1_2020_full.json",

@@ -10,6 +10,7 @@ from gost.exceptions import GostPdfStructureError
 from gost.models import GostDocumentStructure, StructureNode, TocEntry
 from gost.normative_refs import extract_normative_references_from_section
 from gost.pdf_links import extract_pdf_links
+from gost.text_normalize import merge_lines, normalize_block, normalize_line, normalize_title
 
 _TOC_LINE_RE = re.compile(r"^(?P<number>\d+(?:\.\d+)*)\s+(?P<rest>.+)$")
 _TOC_PAGE_RE = re.compile(r"\.{2,}\s*(?P<page>\d+)\s*$")
@@ -74,10 +75,13 @@ class PdfStructureParser:
             for block in blocks:
                 if block[6] != 0:
                     continue
-                for raw in block[4].splitlines():
-                    text = raw.strip()
-                    if not text:
-                        continue
+                raw_lines = [
+                    normalize_line(raw)
+                    for raw in block[4].splitlines()
+                    if normalize_line(raw)
+                ]
+                merged = merge_lines(raw_lines)
+                for text in merged:
                     if page_index > 0 and header_re.match(text) and len(text) < 40:
                         continue
                     lines.append(_Line(text=text, page=page_number))
@@ -95,7 +99,10 @@ class PdfStructureParser:
         stack: list[StructureNode] = []
         current_appendix: StructureNode | None = None
 
-        def append_text(target: StructureNode, line: str) -> None:
+        def append_body(target: StructureNode, line: str) -> None:
+            line = normalize_line(line)
+            if not line:
+                return
             if target.text:
                 target.text += "\n" + line
             else:
@@ -106,7 +113,9 @@ class PdfStructureParser:
                 return current_appendix
             return stack[-1] if stack else None
 
-        for line in lines[body_start:]:
+        i = body_start
+        while i < len(lines):
+            line = lines[i]
             if any(line.text.startswith(marker) for marker in _STOP_MARKERS):
                 break
 
@@ -114,39 +123,53 @@ class PdfStructureParser:
             if appendix_match and not self._is_toc_like(line.text):
                 stack = []
                 kind = appendix_match.group("kind")
-                title = appendix_match.group("title").strip() or line.text
+                title = normalize_title(appendix_match.group("title") or "")
                 if kind:
                     title = f"({kind}) {title}".strip()
+                if not title:
+                    title = normalize_title(line.text)
                 current_appendix = StructureNode(
                     kind="appendix",
                     number=f"Приложение {appendix_match.group('id')}",
                     title=title,
                     page_start=line.page,
-                    text=line.text,
+                    text="",
                 )
                 appendices.append(current_appendix)
+                i += 1
                 continue
 
             clause_match = _CLAUSE_HEADING_RE.match(line.text)
             if clause_match and not self._is_toc_like(line.text):
                 if current_appendix is not None:
-                    append_text(current_appendix, line.text)
+                    append_body(current_appendix, line.text)
+                    i += 1
                     continue
 
                 number = clause_match.group("number")
                 rest = clause_match.group("rest").strip()
-                title = self._strip_page_leaders(rest)
-                if not title or not self._is_valid_heading(number, title):
+                depth = number.count(".")
+                if depth == 0:
+                    title, skip = self._complete_title(rest, lines, i + 1)
+                    initial_body = ""
+                else:
+                    title = ""
+                    skip = 0
+                    initial_body = normalize_line(rest)
+                if depth == 0 and (not title or not self._is_valid_heading(number, title)):
                     node = active_node()
                     if node is not None:
-                        append_text(node, line.text)
+                        append_body(node, line.text)
+                    i += 1
                     continue
-                depth = number.count(".")
+
                 if depth > 0 and not self._belongs_to_current_tree(number, stack):
                     node = active_node()
                     if node is not None:
-                        append_text(node, line.text)
+                        append_body(node, line.text)
+                    i += 1
                     continue
+
                 kind = (
                     "section"
                     if depth == 0
@@ -159,7 +182,7 @@ class PdfStructureParser:
                     number=number,
                     title=title,
                     page_start=line.page,
-                    text=line.text,
+                    text=initial_body,
                 )
 
                 if depth == 0:
@@ -178,13 +201,57 @@ class PdfStructureParser:
                             stack = stack[:depth] + [node]
                         else:
                             stack = stack + [node]
+
+                i += 1 + skip
                 continue
 
             node = active_node()
-            if node is not None and line.text != node.text:
-                append_text(node, line.text)
+            if node is not None:
+                append_body(node, line.text)
+
+            i += 1
+
+        for section in sections:
+            self._finalize_node_text(section)
+        for appendix in appendices:
+            self._finalize_node_text(appendix)
 
         return sections, appendices
+
+    def _finalize_node_text(self, node: StructureNode) -> None:
+        node.text = normalize_block(node.text)
+        for child in node.children:
+            self._finalize_node_text(child)
+
+    def _complete_title(
+        self, rest: str, lines: list[_Line], start_idx: int
+    ) -> tuple[str, int]:
+        title = normalize_title(self._strip_page_leaders(rest))
+        consumed = 0
+
+        if len(title) >= 50:
+            return title, consumed
+
+        while start_idx + consumed < len(lines):
+            nxt = lines[start_idx + consumed]
+            if self._is_toc_like(nxt.text):
+                break
+            if _CLAUSE_HEADING_RE.match(nxt.text) or _APPENDIX_HEADING_RE.match(
+                nxt.text
+            ):
+                break
+            addition = normalize_line(nxt.text)
+            if not addition:
+                consumed += 1
+                continue
+            if re.match(r"^\d+(?:\.\d+)*\s", addition):
+                break
+            title = normalize_title(f"{title} {addition}")
+            consumed += 1
+            if len(title) >= 80:
+                break
+
+        return title, consumed
 
     @staticmethod
     def _find_body_start(lines: list[_Line]) -> int | None:
@@ -232,9 +299,9 @@ class PdfStructureParser:
         return True
 
     def _parse_table_of_contents(self, full_text: str) -> list[TocEntry]:
-        lines = full_text.splitlines()
+        lines = [normalize_line(ln) for ln in full_text.splitlines()]
         start_idx = next(
-            (i + 1 for i, line in enumerate(lines) if line.strip() == "Содержание"),
+            (i + 1 for i, line in enumerate(lines) if line == "Содержание"),
             None,
         )
         if start_idx is None:
@@ -243,7 +310,7 @@ class PdfStructureParser:
         entries: list[TocEntry] = []
         idx = start_idx
         while idx < len(lines):
-            stripped = lines[idx].strip()
+            stripped = lines[idx]
             idx += 1
             if not stripped:
                 continue
@@ -266,7 +333,7 @@ class PdfStructureParser:
                 entries.append(
                     TocEntry(
                         number=f"Приложение {appendix_match.group('id')}",
-                        title=title,
+                        title=normalize_title(title),
                         page=page,
                     )
                 )
@@ -278,7 +345,7 @@ class PdfStructureParser:
                 entries.append(
                     TocEntry(
                         number=section_match.group("number"),
-                        title=title,
+                        title=normalize_title(title),
                         page=page,
                     )
                 )
@@ -289,7 +356,7 @@ class PdfStructureParser:
                     break
                 prev = entries[-1]
                 extra_title, extra_page = self._parse_toc_rest(stripped)
-                prev.title = f"{prev.title} {extra_title}".strip()
+                prev.title = normalize_title(f"{prev.title} {extra_title}")
                 if prev.page is None:
                     prev.page = extra_page
 
@@ -299,7 +366,7 @@ class PdfStructureParser:
     def _line_looks_like_toc(line: str, lookahead: list[str]) -> bool:
         if ".." in line or _TOC_PAGE_RE.search(line):
             return True
-        window = " ".join([line, *(ln.strip() for ln in lookahead)])
+        window = " ".join([line, *(ln for ln in lookahead if ln)])
         return ".." in window or _TOC_PAGE_RE.search(window) is not None
 
     @staticmethod

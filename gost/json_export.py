@@ -137,7 +137,12 @@ def _export_document_link(link: DocumentLink) -> dict[str, Any]:
         "source": link.source,
         "target": link.target,
         "link_type": link.link_type,
+        "target_type": link.target_type,
+        "canonical_target": link.canonical_target,
         "page": link.page,
         "resolved": link.resolved,
         "excerpt": link.excerpt,
+        "char_start": link.char_start,
+        "char_end": link.char_end,
+        "range_end": link.range_end,
     }
