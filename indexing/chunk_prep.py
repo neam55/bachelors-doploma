@@ -28,7 +28,7 @@ _SENTENCE_SPLIT_RE = re.compile(
 )
 
 
-def prepare_semantic_chunk_input(
+def prepare_chunk_input(
     parsed: ParsedGost,
     *,
     document_id: str | None = None,
@@ -167,7 +167,7 @@ def prepare_from_json(
     long_body_threshold: int = LONG_BODY_THRESHOLD,
 ) -> dict[str, Any]:
     parsed = _parsed_from_export_dict(data)
-    return prepare_semantic_chunk_input(
+    return prepare_chunk_input(
         parsed,
         document_id=document_id,
         version=version,
@@ -225,7 +225,6 @@ def _split_sentences(text: str) -> list[str]:
     parts = _SENTENCE_SPLIT_RE.split(text)
     sentences = [_normalize_text(part) for part in parts if _normalize_text(part)]
     return sentences
-
 
 def _normalize_document_root(
     meta: GostMetadata,
@@ -557,7 +556,7 @@ def _register_node_outputs(
     if sentences:
         chunk_entry["sentences"] = sentences
     chunk_entry["chunking_mode"] = (
-        "semantic_split" if len(body) > long_body_threshold else "whole"
+        "split" if len(body) > long_body_threshold else "whole"
     )
     nodes_for_chunking.append(chunk_entry)
 
@@ -652,7 +651,7 @@ def _parsed_from_export_dict(data: dict[str, Any]) -> ParsedGost:
 
 def _build_cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Prepare parsed GOST data for semantic chunking.",
+        description="Prepare parsed GOST data for chunking.",
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
@@ -717,7 +716,7 @@ def main(argv: list[str] | None = None) -> int:
         from gost import GostParser
 
         parsed = GostParser().parse(args.url)
-        result = prepare_semantic_chunk_input(
+        result = prepare_chunk_input(
             parsed,
             document_id=args.document_id,
             version=args.version,

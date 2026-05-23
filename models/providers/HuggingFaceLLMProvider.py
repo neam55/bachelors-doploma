@@ -15,21 +15,22 @@ class HuggingFaceLLMProvider(BaseLLMProvider):
         self._client = InferenceClient(
             api_key=context.api_key,
             base_url=context.base_url,
+            provider=context.model_provider,
             timeout=context.timeout,
         )
 
     def chat(
         self,
-        model: str,
         messages: list[ChatMessage],
         **kwargs: Any,
     ) -> str:
-        resolved = model or self._default_model
         payload = [{"role": m.role, "content": m.content} for m in messages]
         params = {**self._generation, **kwargs}
-        #print(f"[HuggingFaceLLM] generation params: {params}")
+        for key in ("model", "model_id", "model_name", "modelId"):
+            params.pop(key, None)
+
         completion = self._client.chat.completions.create(
-            model=resolved,
+            model=self._default_model,
             messages=payload,
             **params,
         )

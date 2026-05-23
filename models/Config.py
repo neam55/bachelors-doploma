@@ -30,7 +30,7 @@ def _require_env(name: str, *, section: str) -> str:
     return value
 
 
-@dataclass
+@dataclass(frozen=True)
 class ServiceConfig:
     provider: str
     model: str
@@ -38,6 +38,7 @@ class ServiceConfig:
     api_key_env: str | None = None
     base_url: str | None = None
     base_url_env: str | None = None
+    model_provider: str | None = None
     options: dict[str, Any] = field(default_factory=dict)
     generation: dict[str, Any] = field(default_factory=dict)
 
@@ -63,7 +64,7 @@ class ServiceConfig:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class GatewayConfig:
     llm: ServiceConfig
     embedder: ServiceConfig

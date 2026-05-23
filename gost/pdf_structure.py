@@ -27,11 +27,19 @@ _APPENDIX_HEADING_RE = re.compile(
 )
 _STOP_MARKERS = ("Библиография",)
 
-
 @dataclass
 class _Line:
     text: str
     page: int
+
+@dataclass
+class _BLine:
+    text: str
+    page: int
+    x0: float
+    x1: float
+    y0: float
+    y1: float
 
 
 class PdfStructureParser:
@@ -69,23 +77,186 @@ class PdfStructureParser:
         for page_index in range(doc.page_count):
             page_number = page_index + 1
             page = doc.load_page(page_index)
-            blocks = page.get_text("blocks")
-            blocks.sort(key=lambda b: (b[1], b[0]))
 
-            for block in blocks:
-                if block[6] != 0:
+            page_lines = self._extract_page_lines_with_bbox(page, page_number)
+            page_lines = self._merge_broken_lines_by_bbox(page_lines, page.rect.width)
+
+            for item in page_lines:
+                text = normalize_line(item.text)
+                if not text:
                     continue
-                raw_lines = [
-                    normalize_line(raw)
-                    for raw in block[4].splitlines()
-                    if normalize_line(raw)
-                ]
-                merged = merge_lines(raw_lines)
-                for text in merged:
-                    if page_index > 0 and header_re.match(text) and len(text) < 40:
-                        continue
-                    lines.append(_Line(text=text, page=page_number))
+                if page_index > 0 and header_re.match(text) and len(text) < 40:
+                    continue
+                lines.append(_Line(text=text, page=page_number))
+
         return lines
+
+    def _extract_page_lines_with_bbox(self, page: fitz.Page, page_number: int) -> list[_BLine]:
+        data = page.get_text("dict", sort=True)
+        result: list[_BLine] = []
+
+        for block in data["blocks"]:
+            if block.get("type", 0) != 0:
+                continue
+            for line in block.get("lines", []):
+                spans = line.get("spans", [])
+                text = "".join(span.get("text", "") for span in spans).strip()
+                if not text:
+                    continue
+                x0, y0, x1, y1 = line["bbox"]
+                result.append(_BLine(text=text, page=page_number, x0=x0, x1=x1, y0=y0, y1=y1))
+
+        result.sort(key=lambda ln: (ln.y0, ln.x0))
+        return result
+
+    def _merge_broken_lines_by_bbox(
+        self,
+        lines: list[_BLine],
+        page_width: float,
+    ) -> list[_BLine]:
+        """
+        Склеивает:
+        1. Переносы между PDF-строками:
+            основопо
+            лагающих
+
+        2. OCR/PDF-разрывы внутри строки:
+            стандар тов -> стандартов
+            информа ции -> информации
+        """
+
+        if not lines:
+            return lines
+
+        merged: list[_BLine] = []
+        i = 0
+
+        while i < len(lines):
+            cur = lines[i]
+
+            # -----------------------------
+            # FIX 1: чистим разрывы внутри строки
+            # -----------------------------
+            cur_text = self._fix_inner_word_breaks(cur.text)
+
+            cur = _BLine(
+                text=cur_text,
+                page=cur.page,
+                x0=cur.x0,
+                x1=cur.x1,
+                y0=cur.y0,
+                y1=cur.y1,
+            )
+
+            if i + 1 < len(lines):
+                nxt = lines[i + 1]
+
+                nxt_text = self._fix_inner_word_breaks(nxt.text)
+
+                nxt = _BLine(
+                    text=nxt_text,
+                    page=nxt.page,
+                    x0=nxt.x0,
+                    x1=nxt.x1,
+                    y0=nxt.y0,
+                    y1=nxt.y1,
+                )
+
+                # -----------------------------
+                # Геометрия строк
+                # -----------------------------
+                y_gap = nxt.y0 - cur.y1
+
+                same_paragraph = 0 <= y_gap < 12
+
+                same_column = abs(nxt.x0 - cur.x0) < page_width * 0.15
+
+                ends_at_right_edge = cur.x1 > page_width * 0.78
+
+                starts_lowercase = (
+                    bool(nxt.text)
+                    and nxt.text[0].islower()
+                )
+
+                ends_with_word = (
+                    bool(cur.text)
+                    and cur.text[-1].isalnum()
+                )
+
+                # -----------------------------
+                # FIX 2: перенос без дефиса
+                # -----------------------------
+                word_broken = (
+                    same_paragraph
+                    and same_column
+                    and ends_at_right_edge
+                    and starts_lowercase
+                    and ends_with_word
+                )
+
+                if word_broken:
+                    joined_text = (
+                        cur.text.rstrip()
+                        + nxt.text.lstrip()
+                    )
+
+                    merged.append(
+                        _BLine(
+                            text=joined_text,
+                            page=cur.page,
+                            x0=cur.x0,
+                            x1=nxt.x1,
+                            y0=cur.y0,
+                            y1=nxt.y1,
+                        )
+                    )
+
+                    i += 2
+                    continue
+
+            merged.append(cur)
+            i += 1
+
+        return merged
+
+
+    @staticmethod
+    def _fix_inner_word_breaks(text: str) -> str:
+        """
+        Склеивает PDF/OCR-разрывы внутри строки.
+
+        Примеры:
+            стандар тов -> стандартов
+            информа ции -> информации
+            компе тенции -> компетенции
+        """
+
+        pattern = re.compile(
+            r"(?P<a>[а-яёa-z]{4,})\s+(?P<b>[а-яёa-z]{2,})",
+            flags=re.IGNORECASE,
+        )
+
+        def repl(match: re.Match) -> str:
+            left = match.group("a")
+            right = match.group("b")
+
+            # не склеиваем слишком длинные куски
+            if len(left) > 15 or len(right) > 15:
+                return match.group(0)
+
+            # не склеиваем слова после точки
+            if left.endswith((".", ":", ";")):
+                return match.group(0)
+
+            return left + right
+
+        prev = None
+
+        while prev != text:
+            prev = text
+            text = pattern.sub(repl, text)
+
+        return text
 
     def _parse_hierarchy(
         self, lines: list[_Line]

@@ -17,15 +17,16 @@ class LocalRerankerProvider(BaseRerankerProvider):
 
     def rerank(
         self,
-        model: str,
         query: str,
         documents: list[str],
         top_k: int | None = None,
         **kwargs: Any,
     ) -> list[tuple[int, float]]:
-        _ = model
         if not documents:
             return []
+
+        for key in ("model", "model_id", "model_name", "modelId"):
+            kwargs.pop(key, None)
 
         pairs = [[query, doc] for doc in documents]
         scores = self._model.predict(pairs, batch_size=self._batch_size, **kwargs)

@@ -4,9 +4,6 @@ from pathlib import Path
 
 from models.Config import ConfigLoader, GatewayConfig
 from models.ModelsGateway import ModelsGateway
-from models.factories.CrossEncoderFactory import RerankerFactory
-from models.factories.EmbedderFactory import EmbedderFactory
-from models.factories.LlmServiceFactory import LlmServiceFactory
 from models.plugins import discover_plugins
 
 
@@ -21,11 +18,4 @@ def create_gateway(
 
 
 def build_gateway(config: GatewayConfig) -> ModelsGateway:
-    return ModelsGateway(
-        llm=LlmServiceFactory.create(config.llm),
-        embedder=EmbedderFactory.create(config.embedder),
-        reranker=RerankerFactory.create(config.reranker),
-        llm_model=config.llm.model,
-        embedder_model=config.embedder.model,
-        reranker_model=config.reranker.model,
-    )
+    return ModelsGateway.from_config(config)

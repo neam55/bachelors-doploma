@@ -12,8 +12,9 @@ class LocalEmbedderProvider(BaseEmbeddingsProvider):
         self._backend = context.options.get("backend", "torch")
         self._model = SentenceTransformer(default_model, device=device, backend=self._backend)
 
-    def embed(self, model: str, texts: list[str], **kwargs: Any) -> list[list[float]]:
-        _ = model 
+    def embed(self, texts: list[str], **kwargs: Any) -> list[list[float]]:
+        for key in ("model", "model_id", "model_name", "modelId"):
+            kwargs.pop(key, None)
         normalize = kwargs.pop("normalize_embeddings", True)
         vectors = self._model.encode(texts, normalize_embeddings=normalize, batch_size=self._batch_size, **kwargs)
         return vectors.tolist()

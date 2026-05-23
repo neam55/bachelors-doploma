@@ -1,6 +1,7 @@
 llm:
   provider: huggingface
-  model: deepseek-ai/DeepSeek-V4-Pro
+  model_provider: nscale
+  model: Qwen/Qwen2.5-Coder-3B-Instruct
   timeout: 20
   api_key_env: HF_TOKEN
   generation: 
